@@ -42,6 +42,7 @@ database("SecurityLogs").FileCreationEvents
 | extend Severity = "Medium-High", AlertTitle = "Suspicious Executable Created in User Directory"
 | project Hostname = hostname, FileName = filename, FilePath = path, SHA256 = sha256, Severity, AlertTitle
 | sort by Hostname asc
+```
 database("SecurityLogs").AuthenticationEvents
 | summarize FailedCount = count() by TargetUser = username, EventResult = result
 | where EventResult == "Failed Login" and FailedCount > 15
