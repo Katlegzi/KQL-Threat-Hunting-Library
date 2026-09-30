@@ -42,10 +42,40 @@ database("SecurityLogs").FileCreationEvents
 | extend Severity = "Medium-High", AlertTitle = "Suspicious Executable Created in User Directory"
 | project Hostname = hostname, FileName = filename, FilePath = path, SHA256 = sha256, Severity, AlertTitle
 | sort by Hostname asc
-```
+
 database("SecurityLogs").AuthenticationEvents
 | summarize FailedCount = count() by TargetUser = username, EventResult = result
 | where EventResult == "Failed Login" and FailedCount > 15
 | extend Severity = "High", AttackType = "Brute Force / Password Spray"
 | project TargetUser, FailedCount, Severity, AttackType, EventResult
 | sort by FailedCount desc
+```
+---
+
+Detection Rule 03: Multi-Table Correlation – Executable Creation & Endpoint Process Execution
+
+# Objective
+Correlates suspicious executable file creation events with endpoint process telemetry across `FileCreationEvents` and `ProcessEvents` using KQL `join` logic. This identifies workstations where unauthorized binaries (`.exe`, `.ps1`, `.bat`) dropped in user-writable paths are associated with active process activity.
+
+# MITRE ATT&CK Mapping
+* **Tactics:** Execution ([TA0002](https://attack.mitre.org/tactics/TA0002/)), Defense Evasion ([TA0005](https://attack.mitre.org/tactics/TA0005/))
+* **Techniques:** Masquerading ([T1036](https://attack.mitre.org/techniques/T1036/)), Match Legitimate Name or Location ([T1036.005](https://attack.mitre.org/techniques/T1036/005/))
+
+# KQL Query Logic
+
+```kql
+// Source Dataset: Azure Data Explorer / Microsoft Sentinel SecurityLogs
+database("SecurityLogs").FileCreationEvents
+| where (filename endswith ".exe" or filename endswith ".ps1" or filename endswith ".bat")
+  and path !has "System32" and path !has "Program Files"
+
+// Multi-table inner join on Hostname to correlate with process events
+| join kind=inner (
+    database("SecurityLogs").ProcessEvents
+    | summarize ProcessCount = count() by hostname, process_name
+) on hostname
+
+| extend AlertTitle = "File Creation & Process Execution Correlation"
+| project Hostname = hostname, CreatedFile = filename, FilePath = path, RunningProcess = process_name, SHA256 = sha256, AlertTitle
+| take 15
+```
